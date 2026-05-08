@@ -21,3 +21,18 @@ skeleton = HRW.Skeleton.build(["server1", "server2", "server3"])
 HRW.Skeleton.owner("192.168.0.2", skeleton)
 #=> "server3"
 ```
+
+## Benchmarks
+
+tl;dr HRW performs similarly to ExHashRing on smaller node lists, but falls behind as the node list grows. HRW.Skeleton offsets some of the issues, but doesn't match ExHashRing.
+
+Lookup latency on Apple M4 Pro / Elixir 1.19.5 / OTP 28.5, median per call:
+
+| nodes  | HRW.owner   | HRW.Skeleton.owner | ExHashRing.find_node |
+|-------:|------------:|-------------------:|---------------------:|
+|     10 |     292 ns  |      292 ns        |        333 ns        |
+|    100 |    2.67 µs  |      875 ns        |        375 ns        |
+|  1,000 |   25.54 µs  |     1.08 µs        |        380 ns        |
+| 10,000 |  253.58 µs  |     1.38 µs        |        420 ns        |
+
+Reproduce with `elixir benches/hrw.exs`.
