@@ -1,66 +1,91 @@
 defmodule HRW.Skeleton do
+  @moduledoc """
+  A skeleton-based variant of HRW that gives O(log n) lookups by grouping
+  nodes into clusters and routing keys through a virtual tree.
+
+  Build the skeleton once with `build/2`, then pass it to each `owner/3` call.
+  The skeleton is plain data, not a process.
+  """
+
   defstruct [:clusters, :fanout, :levels]
 
+  @doc """
+  Builds a skeleton from `nodes`.
+
+  ## Options
+
+    * `:fanout` - branching factor of the virtual tree. Defaults to `3`.
+    * `:cluster_size` - target number of nodes per cluster. Defaults to `16`.
+
+  ## Examples
+
+      iex> HRW.Skeleton.build(["server1", "server2", "server3"])
+      #HRW.Skeleton<3 nodes, fanout: 3>
+
+  """
   def build(nodes, opts \\ []) do
     fanout = Keyword.get(opts, :fanout, 3)
     size = Keyword.get(opts, :cluster_size, 16)
 
+    cluster_list = chunk_redistribute(nodes, size)
+    clusters = List.to_tuple(cluster_list)
+    count = tuple_size(clusters)
+    levels = if count > 1, do: ceil(:math.log(count) / :math.log(fanout)), else: 0
+
     %__MODULE__{
-      # Grouping into clusters is what makes this O(log n) instead of O(n).
-      # After the virtual tree picks one cluster, we only hash ~16 real nodes.
-      clusters: chunk_redistribute(nodes, size),
+      clusters: clusters,
       fanout: fanout,
-      # Each level produces one base-fanout digit. We need enough digits
-      # that fanout^levels >= cluster_count, or some clusters are unreachable.
-      levels: ceil(:math.log(max(length(nodes), 1)) / :math.log(fanout))
+      levels: levels
     }
   end
 
+  @doc """
+  Returns the node responsible for `key` in the given skeleton.
+
+  ## Options
+
+    * `:hash_fn` - a function `term -> integer`. Defaults to `&:erlang.phash2/1`.
+
+  ## Examples
+
+      iex> skeleton = HRW.Skeleton.build(["server1", "server2", "server3"])
+      iex> HRW.Skeleton.owner("192.168.0.2", skeleton)
+      "server3"
+
+  """
   def owner(key, %__MODULE__{} = skeleton, opts \\ []) do
     hash_fn = Keyword.get(opts, :hash_fn, &:erlang.phash2/1)
     do_owner(key, skeleton, 0, hash_fn)
   end
 
-  defp do_owner(_key, %__MODULE__{clusters: []}, _salt, _hash_fn), do: nil
+  defp do_owner(_key, %__MODULE__{clusters: {}}, _salt, _hash_fn), do: nil
 
-  defp do_owner(key, %__MODULE__{clusters: [cluster]}, _salt, hash_fn) do
+  defp do_owner(key, %__MODULE__{clusters: {cluster}}, _salt, hash_fn) do
     Enum.max_by(cluster, fn node -> hash_fn.({key, node}) end)
   end
 
   defp do_owner(key, skeleton, salt, hash_fn) do
-    # At each level we run HRW on virtual children — not real nodes —
-    # to pick which branch of the tree to follow.
-    path =
-      Enum.map_join(0..(skeleton.levels - 1), fn level ->
-        Enum.max_by(0..(skeleton.fanout - 1), fn child ->
-          hash_fn.({key, salt, level, child})
-        end)
-        |> Integer.to_string()
+    index =
+      Enum.reduce(0..(skeleton.levels - 1), 0, fn level, acc ->
+        digit = Enum.max_by(0..(skeleton.fanout - 1), &hash_fn.({key, salt, level, &1}))
+        acc * skeleton.fanout + digit
       end)
 
-    # The path digits form a base-fanout number. That number *is* the cluster index.
-    # No tree structure is stored — the virtual nodes are generated on the fly from the path.
-    index = String.to_integer(path, skeleton.fanout)
-
-    case Enum.at(skeleton.clusters, index) do
-      # When cluster_count is not a perfect power of fanout, some paths are dead ends.
-      # Salt perturbs the hashes so the retry generates a completely different path.
-      nil ->
-        do_owner(key, skeleton, salt + 1, hash_fn)
-
-      [] ->
-        do_owner(key, skeleton, salt + 1, hash_fn)
-
-      cluster ->
-        # The virtual tree got us to a cluster. Standard HRW on ~16 nodes
-        # instead of all n — this is where the speedup comes from.
-        Enum.max_by(cluster, fn node -> hash_fn.({key, salt, path, node}) end)
+    if index < tuple_size(skeleton.clusters) do
+      cluster = elem(skeleton.clusters, index)
+      Enum.max_by(cluster, fn node -> hash_fn.({key, salt, index, node}) end)
+    else
+      do_owner(key, skeleton, salt + 1, hash_fn)
     end
   end
 
   defp chunk_redistribute(nodes, size) do
     # Deterministic ordering so the same node set always produces the same clusters.
-    chunks = nodes |> Enum.uniq() |> Enum.sort() |> Enum.chunk_every(size)
+    chunks =
+      nodes
+      |> Enum.uniq()
+      |> Enum.sort()
+      |> Enum.chunk_every(size)
 
     # An undersized last chunk would get the same routing probability as full chunks,
     # but with fewer nodes to share the load — roughly doubling their traffic.
@@ -76,5 +101,17 @@ defmodule HRW.Skeleton do
     else
       _ -> chunks
     end
+  end
+end
+
+defimpl Inspect, for: HRW.Skeleton do
+  def inspect(%HRW.Skeleton{clusters: clusters, fanout: fanout}, _opts) do
+    nodes =
+      clusters
+      |> Tuple.to_list()
+      |> Enum.reduce(0, fn cluster, acc -> acc + length(cluster) end)
+
+    label = if nodes == 1, do: "node", else: "nodes"
+    "#HRW.Skeleton<#{nodes} #{label}, fanout: #{fanout}>"
   end
 end

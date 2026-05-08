@@ -4,8 +4,7 @@ nodes_medium = Enum.map(1..1000, fn i -> "key-#{i}" end)
 nodes_large = Enum.map(1..10000, fn i -> "key-#{i}" end)
 
 Benchee.run(%{
-  "owner 100 vnodes" => fn %{nodes: nodes} -> HRW.owner("test", nodes, vnodes: 100) end,
-  "owner no vnodes" => fn %{nodes: nodes} -> HRW.owner("test", nodes, vnodes: 1) end,
+  "owner" => fn %{nodes: nodes} -> HRW.owner("test", nodes) end,
   "skeleton pre-built" => fn %{skeleton: skeleton} -> HRW.Skeleton.owner("test", skeleton) end,
   "skeleton every" => fn %{nodes: nodes} -> skeleton = HRW.Skeleton.build(nodes); HRW.Skeleton.owner("test", skeleton) end
 }, inputs: %{
