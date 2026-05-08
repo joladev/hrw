@@ -23,6 +23,7 @@ defmodule HRW do
       "server2"
 
   """
+  @spec owner(term(), [term()], keyword()) :: term()
   def owner(key, nodes, opts \\ []) do
     hash_fn = Keyword.get(opts, :hash_fn, &:erlang.phash2/1)
 
@@ -44,6 +45,7 @@ defmodule HRW do
       ["server2", "server3"]
 
   """
+  @spec owners(term(), [term()], non_neg_integer(), keyword()) :: [term()]
   def owners(key, nodes, count, opts \\ []) do
     hash_fn = Keyword.get(opts, :hash_fn, &:erlang.phash2/1)
 

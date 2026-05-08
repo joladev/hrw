@@ -1,27 +1,25 @@
-nodes_tiny = Enum.map(1..10, fn i -> "key-#{i}" end)
-nodes_small = Enum.map(1..100, fn i -> "key-#{i}" end)
-nodes_medium = Enum.map(1..1000, fn i -> "key-#{i}" end)
-nodes_large = Enum.map(1..10000, fn i -> "key-#{i}" end)
+Mix.install([
+  {:hrw, path: Path.expand("..", __DIR__)},
+  {:benchee, "~> 1.5"},
+  {:ex_hash_ring, "~> 7.0"}
+])
+
+alias ExHashRing.Ring
+
+setup = fn n ->
+  nodes = Enum.map(1..n, &"node-#{&1}")
+  {:ok, ring} = Ring.start_link()
+  Ring.set_nodes(ring, nodes, :infinity)
+  %{nodes: nodes, skeleton: HRW.Skeleton.build(nodes), ring: ring}
+end
 
 Benchee.run(%{
-  "owner" => fn %{nodes: nodes} -> HRW.owner("test", nodes) end,
-  "skeleton pre-built" => fn %{skeleton: skeleton} -> HRW.Skeleton.owner("test", skeleton) end,
-  "skeleton every" => fn %{nodes: nodes} -> skeleton = HRW.Skeleton.build(nodes); HRW.Skeleton.owner("test", skeleton) end
+  "HRW.owner" => fn %{nodes: nodes} -> HRW.owner("test", nodes) end,
+  "HRW.Skeleton.owner" => fn %{skeleton: skeleton} -> HRW.Skeleton.owner("test", skeleton) end,
+  "ExHashRing.Ring.find_node" => fn %{ring: ring} -> Ring.find_node(ring, "test") end
 }, inputs: %{
-  "tiny" => %{
-    nodes: nodes_tiny,
-    skeleton: HRW.Skeleton.build(nodes_tiny)
-  },
-  "small" => %{
-    nodes: nodes_small,
-    skeleton: HRW.Skeleton.build(nodes_small)
-  },
-  "medium" => %{
-    nodes: nodes_medium,
-    skeleton: HRW.Skeleton.build(nodes_medium)
-  },
-  "large" => %{
-    nodes: nodes_large,
-    skeleton: HRW.Skeleton.build(nodes_large)
-  },
+  "tiny" => setup.(10),
+  "small" => setup.(100),
+  "medium" => setup.(1_000),
+  "large" => setup.(10_000),
 })

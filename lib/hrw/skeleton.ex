@@ -9,6 +9,12 @@ defmodule HRW.Skeleton do
 
   defstruct [:clusters, :fanout, :levels]
 
+  @type t :: %__MODULE__{
+          clusters: tuple(),
+          fanout: pos_integer(),
+          levels: non_neg_integer()
+        }
+
   @doc """
   Builds a skeleton from `nodes`.
 
@@ -23,7 +29,14 @@ defmodule HRW.Skeleton do
       #HRW.Skeleton<3 nodes, fanout: 3>
 
   """
-  def build(nodes, opts \\ []) do
+  @spec build([term()], keyword()) :: t()
+  def build(nodes, opts \\ [])
+
+  def build([], _opts) do
+    raise ArgumentError, "HRW.Skeleton.build/2 requires a non-empty list of nodes"
+  end
+
+  def build(nodes, opts) do
     fanout = Keyword.get(opts, :fanout, 3)
     size = Keyword.get(opts, :cluster_size, 16)
 
@@ -53,12 +66,11 @@ defmodule HRW.Skeleton do
       "server3"
 
   """
+  @spec owner(term(), t(), keyword()) :: term()
   def owner(key, %__MODULE__{} = skeleton, opts \\ []) do
     hash_fn = Keyword.get(opts, :hash_fn, &:erlang.phash2/1)
     do_owner(key, skeleton, 0, hash_fn)
   end
-
-  defp do_owner(_key, %__MODULE__{clusters: {}}, _salt, _hash_fn), do: nil
 
   defp do_owner(key, %__MODULE__{clusters: {cluster}}, _salt, hash_fn) do
     Enum.max_by(cluster, fn node -> hash_fn.({key, node}) end)

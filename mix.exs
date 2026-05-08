@@ -22,8 +22,7 @@ defmodule HRW.MixProject do
   defp deps do
     [
       {:ex_doc, "~> 0.40.1", only: :dev},
-      {:credo, "~> 1.7", only: :dev},
-      {:benchee, "~> 1.5", only: :dev}
+      {:credo, "~> 1.7", only: :dev}
     ]
   end
 end
