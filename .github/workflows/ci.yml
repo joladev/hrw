@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    name: Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Latest, matches mise.toml.
+          - elixir: "1.19.5"
+            otp: "28.5"
+          # Floor of `elixir: "~> 1.18"`. Catches accidental use of features
+          # only present in newer Elixir/OTP releases.
+          - elixir: "1.18.0"
+            otp: "25.3"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp }}
+          elixir-version: ${{ matrix.elixir }}
+
+      - name: Cache deps and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-otp${{ matrix.otp }}-elixir${{ matrix.elixir }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-otp${{ matrix.otp }}-elixir${{ matrix.elixir }}-mix-
+
+      - run: mix deps.get
+      - run: mix format --check-formatted
+      - run: mix compile --warnings-as-errors
+      - run: mix test
+      - run: mix credo --strict
