@@ -27,7 +27,10 @@ defmodule HRW do
   def owner(key, nodes, opts \\ []) do
     hash_fn = Keyword.get(opts, :hash_fn, &:erlang.phash2/1)
 
-    Enum.max_by(nodes, fn node ->
+    nodes
+    |> Enum.uniq()
+    |> Enum.sort()
+    |> Enum.max_by(fn node ->
       hash_fn.({key, node})
     end)
   end
@@ -50,6 +53,8 @@ defmodule HRW do
     hash_fn = Keyword.get(opts, :hash_fn, &:erlang.phash2/1)
 
     nodes
+    |> Enum.uniq()
+    |> Enum.sort()
     |> Enum.sort_by(fn node -> hash_fn.({key, node}) end, :desc)
     |> Enum.take(count)
   end

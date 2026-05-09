@@ -1,5 +1,10 @@
 # HRW
 
+[![Hex.pm](https://img.shields.io/hexpm/v/hrw.svg)](https://hex.pm/packages/hrw)
+[![Hexdocs](https://img.shields.io/badge/hex-docs-lightgreen.svg)](https://hexdocs.pm/hrw)
+[![CI](https://github.com/joladev/hrw/actions/workflows/ci.yml/badge.svg)](https://github.com/joladev/hrw/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/hexpm/l/hrw.svg)](https://github.com/joladev/hrw/blob/main/LICENSE)
+
 HRW (Highest Random Weight) is another name for rendezvous hashing, an alternative to consistent hashing frequently used in programming to get stable association of keys and nodes that are resistant to changes in the list of nodes.
 
 The most common library in the Elixir community to use to solve that problem is ExHashRing by Discord, which is battle-tested and highly performant. However, it requires starting and maintaining processes, and HRW does not. For smaller lists of nodes, `HRW.owner` (O(n)) or `HRW.owners` (O(n log n)) will perform just fine, and is completely stateless, requiring no setup when starting your app.
