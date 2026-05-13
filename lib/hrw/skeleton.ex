@@ -1,34 +1,22 @@
 defmodule HRW.Skeleton do
   @moduledoc """
-  A skeleton-based variant of HRW that gives O(log n) lookups by grouping
-  nodes into clusters and routing keys through a virtual tree.
+  Internal data structure backing `HRW.build/2` and `HRW.owner/3` for
+  O(log n) lookups. Nodes are grouped into clusters and routed through a
+  virtual tree. Plain data, not a process.
 
-  Build the skeleton once with `build/2`, then pass it to each `owner/3` call.
-  The skeleton is plain data, not a process.
+  Not intended for direct use — go through `HRW`.
   """
 
-  defstruct [:clusters, :fanout, :levels]
+  defstruct [:clusters, :fanout, :levels, :scorer]
 
   @type t :: %__MODULE__{
           clusters: tuple(),
           fanout: pos_integer(),
-          levels: non_neg_integer()
+          levels: non_neg_integer(),
+          scorer: struct() | nil
         }
 
-  @doc """
-  Builds a skeleton from `nodes`.
-
-  ## Options
-
-    * `:fanout` - branching factor of the virtual tree. Defaults to `3`.
-    * `:cluster_size` - target number of nodes per cluster. Defaults to `16`.
-
-  ## Examples
-
-      iex> HRW.Skeleton.build(["server1", "server2", "server3"])
-      #HRW.Skeleton<3 nodes, fanout: 3>
-
-  """
+  @doc false
   @spec build([term()], keyword()) :: t()
   def build(nodes, opts \\ [])
 
@@ -39,6 +27,7 @@ defmodule HRW.Skeleton do
   def build(nodes, opts) do
     fanout = Keyword.get(opts, :fanout, 3)
     size = Keyword.get(opts, :cluster_size, 16)
+    scorer = Keyword.get(opts, :scorer, %HRW{})
 
     cluster_list = chunk_redistribute(nodes, size)
     clusters = List.to_tuple(cluster_list)
@@ -48,46 +37,52 @@ defmodule HRW.Skeleton do
     %__MODULE__{
       clusters: clusters,
       fanout: fanout,
-      levels: levels
+      levels: levels,
+      scorer: scorer
     }
   end
 
-  @doc """
-  Returns the node responsible for `key` in the given skeleton.
-
-  ## Options
-
-    * `:hash_fn` - a function `term -> integer`. Defaults to `&:erlang.phash2/1`.
-
-  ## Examples
-
-      iex> skeleton = HRW.Skeleton.build(["server1", "server2", "server3"])
-      iex> HRW.Skeleton.owner("192.168.0.2", skeleton)
-      "server3"
-
-  """
-  @spec owner(term(), t(), keyword()) :: term()
-  def owner(key, %__MODULE__{} = skeleton, opts \\ []) do
-    hash_fn = Keyword.get(opts, :hash_fn, &:erlang.phash2/1)
-    do_owner(key, skeleton, 0, hash_fn)
+  @doc false
+  def owner(key, %__MODULE__{} = skeleton) do
+    do_owner(key, skeleton, 0)
   end
 
-  defp do_owner(key, %__MODULE__{clusters: {cluster}}, _salt, hash_fn) do
-    Enum.max_by(cluster, fn node -> hash_fn.({key, node}) end)
+  # We take the fast path when scorer and hash_fn are not overridden.
+  defp do_owner(key, %__MODULE__{clusters: {cluster}, scorer: %HRW{hash_fn: nil}}, _salt) do
+    Enum.max_by(cluster, fn node -> :erlang.phash2({key, node}) end)
   end
 
-  defp do_owner(key, skeleton, salt, hash_fn) do
+  defp do_owner(key, %__MODULE__{scorer: %HRW{hash_fn: nil}} = skeleton, salt) do
     index =
       Enum.reduce(0..(skeleton.levels - 1), 0, fn level, acc ->
-        digit = Enum.max_by(0..(skeleton.fanout - 1), &hash_fn.({key, salt, level, &1}))
+        digit = Enum.max_by(0..(skeleton.fanout - 1), &:erlang.phash2({{key, salt, level}, &1}))
         acc * skeleton.fanout + digit
       end)
 
     if index < tuple_size(skeleton.clusters) do
       cluster = elem(skeleton.clusters, index)
-      Enum.max_by(cluster, fn node -> hash_fn.({key, salt, index, node}) end)
+      Enum.max_by(cluster, fn node -> :erlang.phash2({{key, salt, index}, node}) end)
     else
-      do_owner(key, skeleton, salt + 1, hash_fn)
+      do_owner(key, skeleton, salt + 1)
+    end
+  end
+
+  defp do_owner(key, %__MODULE__{clusters: {cluster}, scorer: %mod{} = scorer}, _salt) do
+    Enum.max_by(cluster, fn node -> mod.score(scorer, key, node) end)
+  end
+
+  defp do_owner(key, %__MODULE__{scorer: %mod{} = scorer} = skeleton, salt) do
+    index =
+      Enum.reduce(0..(skeleton.levels - 1), 0, fn level, acc ->
+        digit = Enum.max_by(0..(skeleton.fanout - 1), &mod.score(scorer, {key, salt, level}, &1))
+        acc * skeleton.fanout + digit
+      end)
+
+    if index < tuple_size(skeleton.clusters) do
+      cluster = elem(skeleton.clusters, index)
+      Enum.max_by(cluster, fn node -> mod.score(scorer, {key, salt, index}, node) end)
+    else
+      do_owner(key, skeleton, salt + 1)
     end
   end
 
@@ -117,13 +112,13 @@ defmodule HRW.Skeleton do
 end
 
 defimpl Inspect, for: HRW.Skeleton do
-  def inspect(%HRW.Skeleton{clusters: clusters, fanout: fanout}, _opts) do
+  def inspect(%HRW.Skeleton{clusters: clusters, fanout: fanout, scorer: scorer}, _opts) do
     nodes =
       clusters
       |> Tuple.to_list()
       |> Enum.reduce(0, fn cluster, acc -> acc + length(cluster) end)
 
     label = if nodes == 1, do: "node", else: "nodes"
-    "#HRW.Skeleton<#{nodes} #{label}, fanout: #{fanout}>"
+    "#HRW.Skeleton<#{nodes} #{label}, fanout: #{fanout}, scorer: #{inspect(scorer)}>"
   end
 end
