@@ -116,7 +116,7 @@ defmodule HRW do
 
   ## Examples
 
-      iex> HRW.build(["server1", "server2", "server3"])
+      iex> HRW.build(["server1", "server2", "server3"], fanout: 3)
       #HRW.Skeleton<3 nodes, fanout: 3, scorer: %HRW{hash_fn: nil}>
   """
   @spec build([term()], keyword()) :: HRW.Skeleton.t()

@@ -25,13 +25,14 @@ defmodule HRW.Skeleton do
   end
 
   def build(nodes, opts) do
-    fanout = Keyword.get(opts, :fanout, 3)
     size = Keyword.get(opts, :cluster_size, 16)
     scorer = Keyword.get(opts, :scorer, %HRW{})
 
     cluster_list = chunk_redistribute(nodes, size)
     clusters = List.to_tuple(cluster_list)
     count = tuple_size(clusters)
+
+    fanout = Keyword.get_lazy(opts, :fanout, fn -> optimal_fanout(count) end)
     levels = if count > 1, do: ceil(:math.log(count) / :math.log(fanout)), else: 0
 
     %__MODULE__{
@@ -108,6 +109,17 @@ defmodule HRW.Skeleton do
     else
       _ -> chunks
     end
+  end
+
+  defp optimal_fanout(1), do: 2
+
+  defp optimal_fanout(cluster_count) do
+    Enum.min_by(2..8, fn fanout ->
+      levels = ceil(:math.log(cluster_count) / :math.log(fanout))
+      capacity = Integer.pow(fanout, levels)
+      overflow_prob = (capacity - cluster_count) / capacity
+      fanout * levels / (1 - overflow_prob)
+    end)
   end
 end
 
