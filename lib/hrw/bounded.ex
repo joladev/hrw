@@ -46,13 +46,13 @@ defmodule HRW.Bounded do
 
     keys =
       keys
-      |> Enum.uniq()
       |> Enum.sort()
+      |> Enum.dedup()
 
     nodes =
       nodes
-      |> Enum.uniq()
       |> Enum.sort()
+      |> Enum.dedup()
 
     cap = ceil(length(keys) / length(nodes) * (1 + epsilon))
 

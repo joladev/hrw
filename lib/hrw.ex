@@ -48,21 +48,26 @@ defmodule HRW do
   def owner(key, nodes_or_skeleton, opts \\ [])
 
   def owner(key, %HRW.Skeleton{} = skeleton, _opts) do
-    HRW.Skeleton.owner(key, skeleton)
+    result = HRW.Skeleton.owner(key, skeleton)
+    unwrap_node(result, skeleton.scorer)
   end
 
   def owner(key, nodes, opts) do
+    validate_nodes(nodes, Keyword.get(opts, :scorer, %HRW{}))
+
     nodes =
       nodes
       |> Enum.sort()
-      |> Enum.uniq()
+      |> Enum.dedup()
 
     if scorer = Keyword.get(opts, :scorer) do
       %mod{} = scorer
 
-      Enum.max_by(nodes, fn node ->
+      nodes
+      |> Enum.max_by(fn node ->
         mod.score(scorer, key, node)
       end)
+      |> unwrap_node(scorer)
     else
       Enum.max_by(nodes, fn node ->
         :erlang.phash2({key, node})
@@ -85,10 +90,12 @@ defmodule HRW do
   """
   @spec owners(term(), [term()], non_neg_integer(), keyword()) :: [term()]
   def owners(key, nodes, count, opts \\ []) do
+    validate_nodes(nodes, Keyword.get(opts, :scorer, %HRW{}))
+
     nodes =
       nodes
       |> Enum.sort()
-      |> Enum.uniq()
+      |> Enum.dedup()
 
     if scorer = Keyword.get(opts, :scorer) do
       %mod{} = scorer
@@ -96,6 +103,7 @@ defmodule HRW do
       nodes
       |> Enum.sort_by(fn node -> mod.score(scorer, key, node) end, :desc)
       |> Enum.take(count)
+      |> Enum.map(&unwrap_node(&1, scorer))
     else
       nodes
       |> Enum.sort_by(fn node -> :erlang.phash2({key, node}) end, :desc)
@@ -121,6 +129,26 @@ defmodule HRW do
   """
   @spec build([term()], keyword()) :: HRW.Skeleton.t()
   def build(nodes, opts \\ []) do
+    validate_nodes(nodes, Keyword.get(opts, :scorer, %HRW{}))
     HRW.Skeleton.build(nodes, opts)
   end
+
+  defp unwrap_node({node, _weight}, %HRW.Weighted{}), do: node
+  defp unwrap_node(node, _scorer), do: node
+
+  defp validate_nodes(nodes, %HRW{}) when is_list(nodes), do: nil
+  defp validate_nodes(_nodes, %HRW{}), do: raise(ArgumentError, "nodes must be a list")
+
+  defp validate_nodes(nodes, %HRW.Weighted{}) when is_list(nodes) do
+    if not Enum.all?(nodes, fn
+         {_node, weight} when is_number(weight) and weight > 0 -> true
+         _ -> false
+       end) do
+      raise ArgumentError,
+            "HRW.Weighted requires a list of {node, weight} tuples with positive numeric weights"
+    end
+  end
+
+  defp validate_nodes(_nodes, %HRW.Weighted{}),
+    do: raise(ArgumentError, "nodes must be a list of tuples")
 end

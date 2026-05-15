@@ -11,7 +11,9 @@ The most common library in the Elixir community to use to solve that problem is 
 
 For larger node sets, build a skeleton with `HRW.build` and pass it to `HRW.owner` to get O(log n) lookups. The skeleton is plain data — build it once, reuse it across calls.
 
-Additionally, there's `HRW.Bounded` for when you want to control the distribution of keys across nodes to limit skew. Consistent hashing and rendezvous hashing algorithms can easily result in uneven distribution for smaller node counts, and `HRW.Bounded` lets you control that, assuming that you have the whole key set up front.
+`HRW.owner` and `HRW.build` support an optional `scorer` option for alternative strategies. The available options are `%HRW{}` for the default algorithm, and `%HRW.Weighted{}` for when you want certain nodes to get a larger share of keys.
+
+For additional strategies, there's `HRW.Bounded` for when you want to control the distribution of keys across nodes to limit skew. Consistent hashing and rendezvous hashing algorithms can easily result in uneven distribution for smaller node counts, and `HRW.Bounded` lets you control that, assuming that you have the whole key set up front.
 
 ```elixir
 # HRW
@@ -28,6 +30,10 @@ skeleton = HRW.build(["server1", "server2", "server3"])
 HRW.owner("192.168.0.2", skeleton)
 #=> "server3"
 
+# HRW.Weighted
+HRW.owner("192.168.0.1", [{"server1", 1}, {"server2", 1}, {"server3", 10}], scorer: %HRW.Weighted{})
+#=> "server3"
+
 # HRW.Bounded
 HRW.Bounded.assignments(["a", "b", "c", "d"], ["x", "y"], epsilon: 0.0)
 #=> %{"a" => "x", "b" => "x", "c" => "y", "d" => "y"}
@@ -39,11 +45,11 @@ tl;dr HRW performs similarly to ExHashRing on smaller node lists, but falls behi
 
 Lookup latency on Apple M4 Pro / Elixir 1.19.5 / OTP 28.5, median per call:
 
-| nodes  | HRW.owner   | HRW.owner (skeleton) | ExHashRing.find_node |
-|-------:|------------:|-------------------:|---------------------:|
-|     10 |     292 ns  |      292 ns        |        333 ns        |
-|    100 |    2.67 µs  |      875 ns        |        375 ns        |
-|  1,000 |   25.54 µs  |     1.08 µs        |        380 ns        |
-| 10,000 |  253.58 µs  |     1.38 µs        |        420 ns        |
+| nodes  | HRW.owner | HRW.owner (weighted) | HRW.owner (skeleton) | HRW.owner (skeleton weighted) | ExHashRing.find_node |
+|-------:|----------:|---------------------:|---------------------:|------------------------------:|---------------------:|
+|     10 |    542 ns |              1.00 µs |               292 ns |                        667 ns |               333 ns |
+|    100 |   6.33 µs |             11.00 µs |               920 ns |                       1.71 µs |               380 ns |
+|  1,000 |  71.79 µs |               121 µs |              1.25 µs |                       2.25 µs |               380 ns |
+| 10,000 |    771 µs |              1.25 ms |              1.50 µs |                       2.92 µs |               420 ns |
 
 Reproduce with `elixir benches/bench.exs`.
