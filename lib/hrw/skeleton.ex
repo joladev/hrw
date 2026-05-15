@@ -35,6 +35,19 @@ defmodule HRW.Skeleton do
     fanout = Keyword.get_lazy(opts, :fanout, fn -> optimal_fanout(count) end)
     levels = if count > 1, do: ceil(:math.log(count) / :math.log(fanout)), else: 0
 
+    scorer =
+      case scorer do
+        %HRW.Weighted{} = weighted ->
+          %{
+            weighted
+            | branch_weights: compute_branch_weights(cluster_list, fanout, levels),
+              fanout: fanout
+          }
+
+        other ->
+          other
+      end
+
     %__MODULE__{
       clusters: clusters,
       fanout: fanout,
@@ -56,7 +69,9 @@ defmodule HRW.Skeleton do
   defp do_owner(key, %__MODULE__{scorer: %HRW{hash_fn: nil}} = skeleton, salt) do
     index =
       Enum.reduce(0..(skeleton.levels - 1), 0, fn level, acc ->
-        digit = Enum.max_by(0..(skeleton.fanout - 1), &:erlang.phash2({{key, salt, level}, &1}))
+        digit =
+          Enum.max_by(0..(skeleton.fanout - 1), &:erlang.phash2({{key, salt, level, acc}, &1}))
+
         acc * skeleton.fanout + digit
       end)
 
@@ -75,7 +90,9 @@ defmodule HRW.Skeleton do
   defp do_owner(key, %__MODULE__{scorer: %mod{} = scorer} = skeleton, salt) do
     index =
       Enum.reduce(0..(skeleton.levels - 1), 0, fn level, acc ->
-        digit = Enum.max_by(0..(skeleton.fanout - 1), &mod.score(scorer, {key, salt, level}, &1))
+        digit =
+          Enum.max_by(0..(skeleton.fanout - 1), &mod.score(scorer, {key, salt, level, acc}, &1))
+
         acc * skeleton.fanout + digit
       end)
 
@@ -91,8 +108,8 @@ defmodule HRW.Skeleton do
     # Deterministic ordering so the same node set always produces the same clusters.
     chunks =
       nodes
-      |> Enum.uniq()
       |> Enum.sort()
+      |> Enum.dedup()
       |> Enum.chunk_every(size)
 
     # An undersized last chunk would get the same routing probability as full chunks,
@@ -120,6 +137,36 @@ defmodule HRW.Skeleton do
       overflow_prob = (capacity - cluster_count) / capacity
       fanout * levels / (1 - overflow_prob)
     end)
+  end
+
+  defp compute_branch_weights(_clusters, _fanout, 0), do: {}
+
+  defp compute_branch_weights(clusters, fanout, levels) do
+    cluster_weights =
+      clusters
+      |> Enum.with_index()
+      |> Enum.map(fn {nodes, index} ->
+        total =
+          Enum.sum(
+            Enum.map(nodes, fn
+              {_node, weight} -> weight
+              # plain nodes get implicit weight 1
+              _ -> 1
+            end)
+          )
+
+        {index, total}
+      end)
+
+    0..(levels - 1)
+    |> Enum.map(fn level ->
+      divisor = Integer.pow(fanout, levels - level - 1)
+
+      Enum.reduce(cluster_weights, %{}, fn {index, weight}, acc ->
+        Map.update(acc, div(index, divisor), weight, &(&1 + weight))
+      end)
+    end)
+    |> List.to_tuple()
   end
 end
 

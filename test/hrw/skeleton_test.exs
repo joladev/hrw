@@ -5,6 +5,6 @@ defmodule HRW.SkeletonTest do
     nodes = Enum.map(1..12, &"server#{&1}")
     skeleton = HRW.build(nodes, cluster_size: 4)
 
-    assert HRW.owner("192.168.0.1", skeleton) == "server12"
+    assert HRW.owner("192.168.0.1", skeleton) == "server9"
   end
 end
