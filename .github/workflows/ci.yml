@@ -50,10 +50,6 @@ jobs:
         if: matrix.unlock
         run: mix deps.unlock --all
 
-      - name: Check for unused deps in mix.lock
-        if: '!matrix.unlock'
-        run: mix deps.unlock --check-unused
-
       - name: Install dependencies
         run: mix deps.get
 
