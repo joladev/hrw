@@ -25,9 +25,6 @@ jobs:
             otp: "28.5"
             unlock: true
 
-    env:
-      MIX_ENV: test
-
     steps:
       - uses: actions/checkout@v6
 
