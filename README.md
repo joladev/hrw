@@ -15,6 +15,16 @@ For larger node sets, build a skeleton with `HRW.build` and pass it to `HRW.owne
 
 For additional strategies, there's `HRW.Bounded` for when you want to control the distribution of keys across nodes to limit skew. Consistent hashing and rendezvous hashing algorithms can easily result in uneven distribution for smaller node counts, and `HRW.Bounded` lets you control that, assuming that you have the whole key set up front.
 
+## Quickstart
+
+```elixir
+def deps do
+  [
+    {:hrw, "~> 0.2"}
+  ]
+end
+```
+
 ```elixir
 # HRW
 HRW.owner("192.168.0.1", ["server1", "server2", "server3"])

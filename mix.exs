@@ -4,7 +4,7 @@ defmodule HRW.MixProject do
   def project do
     [
       app: :hrw,
-      version: "0.2.0",
+      version: "0.2.1",
       elixir: "~> 1.15",
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),

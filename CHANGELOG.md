@@ -1,5 +1,9 @@
 # Changelog
 
+## [v0.2.1] - 2026-05-21
+
+[#6](https://github.com/joladev/hrw/pull/6) - Loosen Elixir version requirement
+
 ## [v0.2.0] - 2026-05-15
 
 [#2](https://github.com/joladev/hrw/pull/2) - Implements HRW.Weighted by @joladev
