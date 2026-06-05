@@ -18,8 +18,8 @@ jobs:
           - elixir: "1.15.0"
             otp: "24.3"
             unlock: false
-          - elixir: "1.19.5"
-            otp: "28.5"
+          - elixir: "1.20.0"
+            otp: "29.0.1"
             unlock: false
           - elixir: "1.19.5"
             otp: "28.5"
